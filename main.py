@@ -1,6 +1,7 @@
 import time
 import datetime
 import threading
+import random
 import os
 try:
     import scratchattach as scratch3
@@ -8,8 +9,34 @@ except:
     os.system("pip install -U scratchattach")
     import scratchattach as scratch3
 
-session = scratch3.login("BLOCKING_HACCKS_BOT", os.environ["PASSWORD"])
-projects_to_protect = ["108566337"]  # only one project works right now
+# LOG-IN
+session = scratch3.login("BLOCKING_HACCKS_BOT", os.environ["BOT_PASSWORD"])
+
+# Only one project works right now (will fix again very soon; don't worry)
+projects_to_protect = ["108566337"]
+# slither.io 1: "108566337"
+# slither.io 2: "544213416"
+# MMO Platformer: "612229554"
+# Cloud fun 1: "12785898"
+# Cloud fun 3: "823872487"
+# Minecraft-ish: "843162693"
+
+bad_users = ["-Plat-", "CoolBotABC123AWESOME", "shj_bot", "CorrectScratcher", "ns92", "betterconnection10", "superordi", "Vrai_nom", "SpartanDav", "WAYLIVES", "ahlashaool", "TheMobileGames"]  # exact capitalization matters; I am 100% sure they hacked.
+
+test_ban_for_fun = [""]
+# a second ban list used to target specific hackers for specific reasons
+# "*" means all but those in whitelisted users; dangerous/bad
+
+whitelisted_users = ["BLOCKING_HACCKS_BOT", "ThatMobileGames", "TheMobileGames", "Human_NOT_bot"]  # prevents getting stuck in a loop setting cloud variables and lets the user bypass any anti-hack protections (WIP)
+
+use_random_value = False
+# override_value = ""
+# override_value_for_fun = ""
+# override_value = "-999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
+override_value = "1412241413436443851643738533836533837645253484916333545483644424740644134363644526435485345128225104215930866100000313621610"
+override_value_for_fun = "1412241413436443851643738533836533837645253484916333545483644424740644134363644526435485345128225104215930866100000313621610"
+# this value means username: "HACKER_DETECTED_STOP/@BLOCKING_HACCKS_BOT", score: "100000", top-left corner, fully red snake skin color in griffpatch's slither.io
+
 
 conns_to_disconnect = []
 new_conns_to_use = []
@@ -25,7 +52,7 @@ def create_new_conns():
         while len(conns_to_disconnect) > 0:
             conns_to_disconnect[0].disconnect()
             del conns_to_disconnect[0]
-            #print("THREAD: disconnected 1")
+#            print("THREAD: disconnected 1")
         while "" in new_conns_to_use:
             index = new_conns_to_use.index("")
             new_conns_to_use[index] = session.connect_cloud(projects_to_protect[index])
@@ -36,15 +63,6 @@ update_conns_thread = threading.Thread(target=create_new_conns)
 update_conns_thread.daemon = True  # Thread to terminate when the program ends
 update_conns_thread.start()
 
-
-bad_users = ["CorrectScratcher", "ahlashaool", "ns92", "betterconnection10", "superordi", "Vrai_nom",]  # exact capitalization matters
-
-test_ban_for_fun = ["", ""]  # does not change the hacker's username to "("
-whitelisted_users = ["ThatMobileGames", "TheMobileGames", "Human_NOT_bot", ""]  # prevents getting stuck in a loop setting cloud variables and lets the user bypass any anti-hack protections (WIP)
-
-override_value = "-999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
-#override_value_for_fun = ""
-override_value_for_fun = "3.1415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679"
 
 conns = []
 for project in projects_to_protect:
@@ -73,7 +91,6 @@ for i in events:
         print("Hacker detection is ready for", projects_to_protect[events.index(i)])
 
 for i in events:
-    print("why is this working before but not after", events.index(i))
     @i.event
     def on_set(event):  # Called when a cloud var is set
         global attempted_event_count
@@ -84,20 +101,26 @@ for i in events:
         global time_at_last_success
         global new_conns_to_use
         global conns_to_disconnect
+        global override_value
+        global override_value_for_fun
         index = events.index(i)
-        #print("new", projects_to_protect[events.index(i)])
+        if use_random_value == True:
+            override_value = random.randint(10**(256-1), 10**256 - 1)
+            override_value_for_fun = override_value
         iso_date = session.connect_user(event.user).join_date
-        if (time.time() - (datetime.datetime.strptime(iso_date, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp())) < 1209600:  # if the user was made less than 2 weeks ago, their cloud vars will be overidden
+        if ((time.time() - (datetime.datetime.strptime(iso_date, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp())) < 1209600) and (event.user not in whitelisted_users):  # if the user was made less than 2 weeks ago, their cloud vars will be overidden
             conns[index].set_var(event.var, override_value)
             attempted_event_count[index] += 1
             time_at_last_event[index] = time.monotonic()
             print("New Scratcher detected:", event.user)
         elif (event.user in bad_users) and (event.user not in whitelisted_users):
-            conns[index].set_var(event.var, override_value)
+            for _ in range(1):
+                conns[index].set_var(event.var, override_value)
             attempted_event_count[index] += 1
             time_at_last_event[index] = time.monotonic()
             print("Bad user detected:", event.user)
-        elif (event.user in test_ban_for_fun) and (event.user not in whitelisted_users):
+        elif ((event.user in test_ban_for_fun) or ("*" in test_ban_for_fun)) and (event.user not in whitelisted_users):
+            # conns[index].set_var(event.var, override_value_for_fun)
             conns[index].set_var(event.var, override_value_for_fun)
             attempted_event_count[index] += 1
             time_at_last_event[index] = time.monotonic()
