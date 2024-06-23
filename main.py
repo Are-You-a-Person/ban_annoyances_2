@@ -1,19 +1,182 @@
-import time
-from datetime import datetime, timedelta
-import threading
+#!/usr/bin/env python3
+from datetime import datetime
 import random
 import os
-try:
-    import scratchattach as scratch3
-except:
-    os.system("pip install -U scratchattach")
-    import scratchattach as scratch3
+import encoding # snake encoding/decoding
+import scratchattach as scratch3
+
+# listen only (useful for debugging)
+no_kick = False
 
 # LOG-IN
-session = scratch3.login("BLOCKING_HACCKS_BOT", os.environ["BOT_PASSWORD"])
+if not no_kick:
+    session = scratch3.login("CloudAntiCheat", os.environ["BOT_PASSWORD"])
 
-# Only one project works right now (will fix again very soon; don't worry)
-projects_to_protect = ["108566337"]
+
+# exact capitalization matters; I am 100% sure they hacked.
+banned_users = {
+    "-Plat-",
+    "CoolBotABC123AWESOME",
+    "shj_bot",
+    "CorrectScratcher",
+    "ns92",
+    "betterconnection10",
+    "superordi",
+    "Vrai_nom",
+    "SpartanDav",
+    "WAYLIVES",
+    "ahlashaool",
+}
+
+# a second ban list for testing
+test_banned = {
+    # "KentuckyFriedPlayer",
+}
+
+# data shared between projects such as scratcher status so that it is only fetched once
+global_player_data = {}
+
+# all but those in whitelisted users; dangerous/bad
+ban_all = False
+
+
+# prevents getting stuck in a loop setting cloud variables and lets the user bypass any anti-hack protections
+whitelisted_users = {
+    "CloudAntiCheat",
+    "BLOCKING_HACCKS_BOT",
+    "ThatMobileGames",
+    "TheMobileGames",
+    "Human_NOT_bot",
+}
+
+if not no_kick:
+    whitelisted_users.add(session._username)
+
+
+
+# override_value = "1412241413436443851643738533836533837645253484916333545483644424740644134363644526435485345128225104215930866100000313621610"
+# override_value_for_fun = "1412241413436443851643738533836533837645253484916333545483644424740644134363644526435485345128225104215930866100000313621610"
+# this value means username: "HACKER_DETECTED_STOP/@BLOCKING_HACCKS_BOT", score: "100000", top-left corner, fully red snake skin color in griffpatch's slither.io
+
+
+
+class ProjectProtector:
+    project = "Generic"
+    def __init__(self, project_id):
+        # setup vars
+        self.project_id = project_id
+        if not no_kick:
+            self.conn = session.connect_cloud(project_id)
+        self.events = events = scratch3.CloudEvents(project_id)
+        events.event(self.on_ready)
+        events.event(self.on_set)
+        self.player_data = {}
+    def start(self):
+        self.events.start()
+    def stop(self):
+        self.events.stop()
+    def get_override_value(self):
+        return random.randrange(10**255, 10**256)
+    def on_ready(self):
+        print(f"Connected to {self.project_id}")
+        
+    def on_set(self, event):
+        if event.user in whitelisted_users:
+            return
+        # get userinfo or create it if it doesn't exist
+        try:
+            userinfo = self.player_data[event.user]
+        except KeyError:
+            self.player_data[event.user] = userinfo = {}
+            if event.user not in global_player_data:
+                global_player_data[event.user] = {"new": True}
+            userinfo["global"] = global_player_data[event.user]
+            userinfo["new"] = True
+            
+        # skip if kicked in last 2 seconds
+        if userinfo.get("lastkicked", 0) + 2000 > event.timestamp:
+            return
+        
+        reason = self.check_hacks(event)
+        userinfo["new"] = False
+        userinfo["global"]["new"] = False
+        if reason is not None:
+            # logs kick reason and kicks hackers
+            userinfo["lastkicked"] = event.timestamp
+            print(f"{self.project} {self.project_id}: Kicking {event.user} for reason {reason!r} at {timestamp()}")
+            self.disconnect_var(event.var)
+            
+    def disconnect_var(self, varname):
+        override_value = self.get_override_value()
+        print(f"Overriding {varname}")        
+        if not no_kick:
+            self.conn.set_var(varname, override_value)
+            
+    def check_hacks(self, event):
+        global_userinfo = self.player_data[event.user]["global"]
+        user = scratch3.User(username=event.user)
+        # check ban lists
+        if user.username in banned_users:
+            return "on ban list"
+        if user.username in test_banned:
+            return "test banned"
+        if ban_all:
+            return "ban all"
+        
+        # only need to collect new scratcher status once
+        if global_userinfo["new"]:
+            global_userinfo["exists"] = exists = user.does_exist()
+            global_userinfo["last_checked_exists"] = event.timestamp
+            if exists:
+                global_userinfo["new_scratcher"] = user.is_new_scratcher()
+        
+        # checks banned status once a minute
+        if global_userinfo["last_checked_exists"] + 60 * 1000 < event.timestamp:
+            global_userinfo["exists"] = exists = user.does_exist()
+            global_userinfo["last_checked_exists"] = event.timestamp
+        
+        if not global_userinfo["exists"]:
+            return "banned by scratch"
+        if global_userinfo["new_scratcher"]:
+            return "new scratcher"
+        return None
+        
+class SlitherProtector(ProjectProtector):
+    project = "Slither"
+    def get_override_value(self):
+        # return "1412241413436443851643738533836533837645253484916333545483644424740644134363644526435485345128225104215930866100000313621610"
+        # change bot name here
+        return encoding.encode_snake(" Hacker Detected!/@BLOCKING_HACCKS_BOT", length=100000, is_master=2)
+    def check_hacks(self, event):
+        # runs normal checks first
+        reason = super().check_hacks(event)
+        if reason is not None:
+            return reason
+        # attempts to decode, logs errors if it fails
+        try:
+            snake = encoding.decode_snake(event.value)
+        except encoding.DecodingError as e:
+            print(f"Error while decoding {event.value!r} set by {event.user}: {e}")
+        else:
+            if snake["name"].lower() != event.user.lower():
+                return f"mismatched name ({snake['name']})"
+            if "power" in snake and snake["power"] > 2.125:
+                return "speed hacks"
+        return None
+
+
+def timestamp():
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+# projects to protect
+protect = [
+    SlitherProtector("108566337"),
+    SlitherProtector("544213416"),
+    
+    # untested and no in game username check (only basic scratcher checks)
+    # ProjectProtector("12785898")
+    # ProjectProtector("823872487")
+]
 # slither.io 1: "108566337"
 # slither.io 2: "544213416"
 # MMO Platformer: "612229554"
@@ -21,144 +184,11 @@ projects_to_protect = ["108566337"]
 # Cloud fun 3: "823872487"
 # Minecraft-ish: "843162693"
 
-bad_users = ["-Plat-", "CoolBotABC123AWESOME", "shj_bot", "CorrectScratcher", "ns92", "betterconnection10", "superordi", "Vrai_nom", "SpartanDav", "WAYLIVES", "ahlashaool", ""]  # exact capitalization matters; I am 100% sure they hacked.
+for protector in protect:
+  protector.start()
 
-test_ban_for_fun = [""]
-# a second ban list used to target specific hackers for specific reasons
-# "*" means all but those in whitelisted users; dangerous/bad
+# you can use any other method to wait too
+input("Press enter to quit\n")
 
-whitelisted_users = ["BLOCKING_HACCKS_BOT", "ThatMobileGames", "TheMobileGames", "Human_NOT_bot"]  # prevents getting stuck in a loop setting cloud variables and lets the user bypass any anti-hack protections (WIP)
-
-use_random_value = False
-# override_value = ""
-# override_value_for_fun = ""
-# override_value = "-999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
-override_value = "1412241413436443851643738533836533837645253484916333545483644424740644134363644526435485345128225104215930866100000313621610"
-override_value_for_fun = "1412241413436443851643738533836533837645253484916333545483644424740644134363644526435485345128225104215930866100000313621610"
-# this value means username: "HACKER_DETECTED_STOP/@BLOCKING_HACCKS_BOT", score: "100000", top-left corner, fully red snake skin color in griffpatch's slither.io
-
-
-conns_to_disconnect = []
-new_conns_to_use = []
-for project in projects_to_protect:
-    new_conns_to_use.append(session.connect_cloud(project))
-    print("New conn to use:", project)
-
-
-def create_new_conns():
-    global conns_to_disconnect
-    global new_conns_to_use
-    while True:
-        while len(conns_to_disconnect) > 0:
-            conns_to_disconnect[0].disconnect()
-            del conns_to_disconnect[0]
-#            print("THREAD: disconnected 1")
-        while "" in new_conns_to_use:
-            index = new_conns_to_use.index("")
-            new_conns_to_use[index] = session.connect_cloud(projects_to_protect[index])
-            print("THREAD: Created new conn for project", projects_to_protect[index])
-
-
-update_conns_thread = threading.Thread(target=create_new_conns)
-update_conns_thread.daemon = True  # Thread to terminate when the program ends
-update_conns_thread.start()
-
-
-conns = []
-for project in projects_to_protect:
-    conns.append(session.connect_cloud(project))
-    print("Main conn:", project)
-
-events = []
-for project in projects_to_protect:
-    events.append(scratch3.CloudEvents(project))
-
-print("SETUP - Conns:", conns)
-print("SETUP - Events:", events)
-
-attempted_event_count = [0 for _ in range(len(projects_to_protect))]
-successes = [0 for _ in range(len(projects_to_protect))]
-total_event_count = [0 for _ in range(len(projects_to_protect))]
-total_success_count = [0 for _ in range(len(projects_to_protect))]
-time_at_last_event = [0 for _ in range(len(projects_to_protect))]
-time_at_last_success = [0 for _ in range(len(projects_to_protect))]
-print(attempted_event_count, successes, total_event_count, total_success_count, time_at_last_event, time_at_last_success)
-recent_veified_users_dict = {}
-
-for i in events:
-    @i.event  # Called when the event listener is ready
-    def on_ready():
-        print("Event listener ready:", i)
-        print("Hacker detection is ready for", projects_to_protect[events.index(i)])
-
-
-def get_PDT_time():
-    return (datetime.utcnow() + timedelta(hours=-7)).strftime('%Y-%m-%d %H:%M:%S PDT')
-
-
-for i in events:
-    @i.event
-    def on_set(event):  # Called when a cloud var is set
-        global attempted_event_count
-        global successes
-        global total_event_count
-        global total_success_count
-        global time_at_last_event
-        global time_at_last_success
-        global new_conns_to_use
-        global conns_to_disconnect
-        global override_value
-        global override_value_for_fun
-        index = events.index(i)
-        user = scratch3.get_user(event.user)
-        if use_random_value == True:
-            override_value = random.randint(10**(256-1), 10**256 - 1)
-            override_value_for_fun = override_value
-        if (event.user not in whitelisted_users) and ((event.user not in recent_veified_users_dict) or (int(time.time()) > recent_veified_users_dict[event.user] + 120)):
-            if event.user in bad_users:
-                conns[index].set_var(event.var, override_value)
-                attempted_event_count[index] += 1
-                time_at_last_event[index] = time.monotonic()
-                print("Bad User detected:", event.user, "at", get_PDT_time())
-            elif user.does_exist() == False:
-                conns[index].set_var(event.var, override_value)
-                attempted_event_count[index] += 1
-                time_at_last_event[index] = time.monotonic()
-                print("Banned User detected:", event.user, "at", get_PDT_time())
-            elif user.is_new_scratcher():
-                conns[index].set_var(event.var, override_value)
-                attempted_event_count[index] += 1
-                time_at_last_event[index] = time.monotonic()
-                print("New Scratcher detected:", event.user, "at", get_PDT_time())
-            else:
-                recent_veified_users_dict.update({event.user: int(time.time())}) #prevents constantly making requests to Scratch to check users
-            if (event.user in test_ban_for_fun) or ("*" in test_ban_for_fun):
-                conns[index].set_var(event.var, override_value_for_fun)
-                attempted_event_count[index] += 1
-                time_at_last_event[index] = time.monotonic()
-                print("Test ban for fun user detected:", event.user, "at", get_PDT_time())
-
-        if (event.value == override_value) or (event.value == override_value_for_fun):
-            successes[index] += 1
-            time_at_last_success[index] = time.monotonic()
-            print("Successes:", successes, "Events:", attempted_event_count)
-        if ((time_at_last_event[index]) > (time_at_last_success[index] + 10)) and (new_conns_to_use[index] != ""):
-            if len(conns) == len(new_conns_to_use):
-                time_at_last_success[index] = 0
-                time_at_last_event[index] = 0
-                temporary_conn = conns[index]
-                conns[index] = new_conns_to_use[index]
-                new_conns_to_use[index] = ""
-                conns_to_disconnect.append(temporary_conn)
-                total_event_count[index] += attempted_event_count[index]
-                attempted_event_count[index] = 0
-                total_success_count[index] += successes[index]
-                successes[index] = 0
-                print("Used new conn")
-                print("Total event count:", total_event_count, "Total success count:", total_success_count)
-                print("Conns after change:", conns, "index", index)
-            else:
-                print("Why aren't the lists the same length. My code should work. >:(")
-
-for i in events:
-    i.start()
+for protector in protect:
+  protector.stop()
