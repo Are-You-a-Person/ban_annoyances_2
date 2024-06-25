@@ -107,14 +107,17 @@ def decode_snake(encoded):
         snake["power"] = d2.number() / 16
         if not d2.done:
             snake["skin"] = d2.datablock()
-            
+    
+    # ignoring end for now
+    
     # need to look into buildcommandlist
-    snake["buildcommandlist"] = buildcommandlist = d.datablock()
+    # length = d.number()
+    # for _ in range(length):
     
     
-    if not d.done:
-        # not sure what this is for ???
-        snake["griffpatch"] = d.number()
+    # if not d.done:
+    #     # not sure what this is for ???
+    #     snake["griffpatch"] = d.number()
     return snake
 
 def encode_snake(
@@ -130,7 +133,6 @@ def encode_snake(
         hue = 0,
         power = 1, # speed
         skin = None,
-        buildcommandlist = "", # not sure what this is yet
     ):
     e = Encoder()
     e.number(random.randrange(0, 10) if tick is None else tick)
@@ -150,7 +152,8 @@ def encode_snake(
         e2.datablock(skin)
     e.datablock(e2.encoded)
     
-    e.datablock(buildcommandlist)
+    # not doing buildcommandlist yet
+    e.number(0)
     
     return e.encoded
     
